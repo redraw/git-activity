@@ -6,7 +6,7 @@ from pathlib import Path
 
 from textual.app import App, ComposeResult
 from textual.containers import Container, Horizontal, Vertical
-from textual.widgets import Tree, Header, Footer, Static, DataTable, ProgressBar, Label
+from textual.widgets import Tree, Header, Footer, Static, DataTable, ProgressBar, Label, Input
 from textual.binding import Binding
 from textual.reactive import reactive
 from textual.worker import Worker, WorkerState
@@ -90,6 +90,17 @@ class GlobalAuthorTable(DataTable):
 
     def action_cancel_selection(self) -> None:
         self.app._cancel_author_selection()
+
+
+class SearchInput(Input):
+    """Search bar that clears and hides itself on Escape."""
+
+    def on_key(self, event) -> None:
+        if event.key == "escape":
+            self.value = ""
+            self.display = False
+            event.stop()
+            self.app._focus_current_view()
 
 
 class HeatmapWidget(Static):
@@ -280,6 +291,13 @@ class GitActivityApp(App):
         overflow-y: auto;
         padding: 1 2;
     }
+
+    #search-bar {
+        display: none;
+        height: 3;
+        border: solid $accent;
+        margin: 0 0 1 0;
+    }
     """
 
     BINDINGS = [
@@ -296,12 +314,14 @@ class GitActivityApp(App):
         Binding("h", "toggle_heatmap_mode", "Heatmap Mode", show=False),
         Binding("f", "toggle_files", "Toggle Files", show=False),
         Binding("d", "toggle_dirs", "Toggle Dirs", show=False),
+        Binding("/", "activate_search", "Search", show=False),
     ]
 
     view_mode = reactive("tree")  # "tree" | "table" | "authors" | "global_authors" | "heatmap"
     sort_mode = reactive("name")  # "name", "date", "commits", "files"
     show_files = reactive(True)
     show_dirs = reactive(True)
+    search_query = reactive("")
 
     def __init__(self, repo_path: str = "."):
         super().__init__()
@@ -328,6 +348,7 @@ class GitActivityApp(App):
                 id="loading-container"
             ),
             Static(id="stats"),
+            SearchInput(placeholder="/ search files and dirs — Esc to clear", id="search-bar"),
             ActivityTree("Repository", id="file-tree"),
             ActivityTable(id="file-table"),
             AuthorTable(id="author-table"),
@@ -343,6 +364,7 @@ class GitActivityApp(App):
 
         # Hide views initially
         self.query_one("#stats").display = False
+        self.query_one("#search-bar").display = False
         self.query_one("#file-tree").display = False
         self.query_one("#file-table").display = False
         self.query_one("#author-table").display = False
@@ -569,10 +591,13 @@ class GitActivityApp(App):
         table.add_column("Last Updated", key="date", width=12)
         table.add_column("Commits", key="commits", width=10)
 
+        query = self.search_query.lower()
         for item in self.flat_data:
             if item['type'] == 'dir' and not self.show_dirs:
                 continue
             if item['type'] == 'file' and not self.show_files:
+                continue
+            if query and query not in item['path'].lower():
                 continue
             node_type = "Dir" if item['type'] == 'dir' else "File"
             last_commit = item['last_commit']
@@ -753,6 +778,11 @@ class GitActivityApp(App):
         for mode, widget in widgets.items():
             widget.display = (mode == self.view_mode)
 
+        # Hide search bar when leaving table view
+        if self.view_mode != "table":
+            search_bar = self.query_one("#search-bar", SearchInput)
+            search_bar.display = False
+
         widgets[self.view_mode].focus()
         self._update_stats()
 
@@ -775,6 +805,8 @@ class GitActivityApp(App):
         sort_name = self.sort_mode.title()
 
         base = f"View: {view_name} | Sort: {sort_name} | Files: {files} | Dirs: {dirs} | [v] cycle"
+        if self.search_query:
+            base += f" | Search: \"{self.search_query}\" [Esc to clear]"
         if self.view_mode == "table":
             files_label = "Files:on [f]" if self.show_files else "Files:off [f]"
             dirs_label = "Dirs:on [d]" if self.show_dirs else "Dirs:off [d]"
@@ -931,6 +963,36 @@ class GitActivityApp(App):
         elif self.view_mode == "global_authors":
             self._populate_global_author_table()
         self._update_stats()
+
+    def action_activate_search(self) -> None:
+        """Show search bar and focus it, switching to table view if needed."""
+        if self.loading:
+            return
+        if self.view_mode != "table":
+            self.view_mode = "table"
+            self._update_view()
+        search_bar = self.query_one("#search-bar", SearchInput)
+        search_bar.display = True
+        search_bar.focus()
+
+    def on_input_changed(self, event: Input.Changed) -> None:
+        if event.input.id == "search-bar":
+            self.search_query = event.value
+            self._refresh_table_rows()
+            self._update_stats()
+
+    def _focus_current_view(self) -> None:
+        """Focus the widget for the current view mode."""
+        widget_ids = {
+            "tree": "#file-tree",
+            "table": "#file-table",
+            "authors": "#author-table",
+            "global_authors": "#global-author-table",
+            "heatmap": "#heatmap-view",
+        }
+        wid = widget_ids.get(self.view_mode)
+        if wid:
+            self.query_one(wid).focus()
 
     def action_refresh(self) -> None:
         """Refresh the data from git repository."""
