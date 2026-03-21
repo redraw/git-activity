@@ -329,6 +329,7 @@ class GitActivityApp(App):
         self.analyzer = GitAnalyzer(str(self.repo_path))
         self.tree_data = None
         self.flat_data = []
+        self.visible_data = []
         self.loading = True
         self.progress_current = 0
         self.progress_total = 0
@@ -592,6 +593,7 @@ class GitActivityApp(App):
         table.add_column("Commits", key="commits", width=10)
 
         query = self.search_query.lower()
+        self.visible_data = []
         for item in self.flat_data:
             if item['type'] == 'dir' and not self.show_dirs:
                 continue
@@ -599,6 +601,7 @@ class GitActivityApp(App):
                 continue
             if query and query not in item['path'].lower():
                 continue
+            self.visible_data.append(item)
             node_type = "Dir" if item['type'] == 'dir' else "File"
             last_commit = item['last_commit']
             commit_count = item['commit_count']
@@ -921,15 +924,17 @@ class GitActivityApp(App):
         elif self.view_mode == "table":
             table = self.query_one("#file-table", ActivityTable)
             row = table.cursor_row
-            if 0 <= row < len(self.flat_data):
-                return self.flat_data[row]["path"]
+            if 0 <= row < len(self.visible_data):
+                return self.visible_data[row]["path"]
         return ""
 
     def _enter_author_view(self) -> None:
-        """Switch to author view, scoping to the focused file/dir if in tree or table."""
+        """Switch to author view for the focused file/dir (requires a focused item)."""
         if self.loading:
             return
         path = self._get_focused_path()
+        if not path:
+            return
         self._author_context_path = path
         self._populate_author_table(path)
         self.view_mode = "authors"
