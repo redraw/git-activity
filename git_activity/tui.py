@@ -804,18 +804,23 @@ class GitActivityApp(App):
         view_name = view_names.get(self.view_mode, self.view_mode)
         sort_name = self.sort_mode.title()
 
-        base = f"View: {view_name} | Sort: {sort_name} | Files: {files} | Dirs: {dirs} | [v] cycle"
-        if self.search_query:
-            base += f" | Search: \"{self.search_query}\" [Esc to clear]"
+        base = f"View: {view_name} | [v] cycle | [s] sort: {sort_name} | [r] refresh"
+        if self.view_mode in ("tree", "table"):
+            base += " | [a] authors"
         if self.view_mode == "table":
-            files_label = "Files:on [f]" if self.show_files else "Files:off [f]"
-            dirs_label = "Dirs:on [d]" if self.show_dirs else "Dirs:off [d]"
-            base += f" | {files_label} | {dirs_label}"
+            files_label = "on [f]" if self.show_files else "off [f]"
+            dirs_label = "on [d]" if self.show_dirs else "off [d]"
+            base += f" | [/] search | files: {files_label} | dirs: {dirs_label}"
+            if self.search_query:
+                base += f" | filter: \"{self.search_query}\" [Esc]"
+        if self.view_mode == "heatmap":
+            base += " | [h] toggle grid/calendar"
         if self._selected_authors and self.view_mode in ("authors", "global_authors"):
             n = len(self._selected_authors)
             base += f" | [Tab] select  Selected: {n} — [Enter] merge, [Esc] cancel"
         elif self.view_mode in ("authors", "global_authors"):
             base += " | [Tab] select authors to merge"
+        base += f" | {files} files, {dirs} dirs"
         stats.update(base)
 
     def _get_author_at_cursor(self, table_id: str) -> Optional[str]:
@@ -989,6 +994,10 @@ class GitActivityApp(App):
             self.search_query = event.value
             self._refresh_table_rows()
             self._update_stats()
+
+    def on_input_submitted(self, event: Input.Submitted) -> None:
+        if event.input.id == "search-bar":
+            self._focus_current_view()
 
     def _focus_current_view(self) -> None:
         """Focus the widget for the current view mode."""
