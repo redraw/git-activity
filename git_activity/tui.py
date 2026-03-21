@@ -821,7 +821,7 @@ class GitActivityApp(App):
         elif self.view_mode in ("authors", "global_authors"):
             base += " | [Tab] select authors to merge"
         base += f" | {files} files, {dirs} dirs"
-        stats.update(base)
+        stats.update(Text(base))
 
     def _get_author_at_cursor(self, table_id: str) -> Optional[str]:
         """Get the author name at the current cursor row of a table."""
