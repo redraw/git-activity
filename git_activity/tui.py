@@ -294,10 +294,14 @@ class GitActivityApp(App):
         Binding("4", "view_4", "Global Authors", show=False),
         Binding("5", "view_5", "Heatmap", show=False),
         Binding("h", "toggle_heatmap_mode", "Heatmap Mode", show=False),
+        Binding("f", "toggle_files", "Toggle Files", show=False),
+        Binding("d", "toggle_dirs", "Toggle Dirs", show=False),
     ]
 
     view_mode = reactive("tree")  # "tree" | "table" | "authors" | "global_authors" | "heatmap"
     sort_mode = reactive("name")  # "name", "date", "commits", "files"
+    show_files = reactive(True)
+    show_dirs = reactive(True)
 
     def __init__(self, repo_path: str = "."):
         super().__init__()
@@ -550,35 +554,32 @@ class GitActivityApp(App):
         return histogram
 
     def _populate_table(self) -> None:
-        """Populate the table view with git activity data."""
+        """Rebuild flat_data from tree and refresh table rows."""
+        self.flat_data = []
+        self._flatten_tree(self.tree_data, self.flat_data)
+        self._sort_flat_data()
+        self._refresh_table_rows()
+
+    def _refresh_table_rows(self) -> None:
+        """Re-render table rows from flat_data using current filters."""
         table = self.query_one("#file-table", ActivityTable)
         table.clear(columns=True)
-
-        # Add columns (removed Name column, only showing Path)
         table.add_column("Path", key="path", width=60)
         table.add_column("Type", key="type", width=8)
         table.add_column("Last Updated", key="date", width=12)
         table.add_column("Commits", key="commits", width=10)
 
-        # Flatten tree data
-        self.flat_data = []
-        self._flatten_tree(self.tree_data, self.flat_data)
-
-        # Sort data
-        self._sort_flat_data()
-
-        # Add rows
         for item in self.flat_data:
+            if item['type'] == 'dir' and not self.show_dirs:
+                continue
+            if item['type'] == 'file' and not self.show_files:
+                continue
             node_type = "Dir" if item['type'] == 'dir' else "File"
             last_commit = item['last_commit']
             commit_count = item['commit_count']
             path = item['path']
-
             date_str = last_commit.strftime("%Y-%m-%d") if last_commit else "N/A"
-
-            # Color code
             style_name = self._get_style_for_date(last_commit)
-
             table.add_row(
                 Text(path, style=style_name),
                 Text(node_type, style="dim"),
@@ -774,6 +775,10 @@ class GitActivityApp(App):
         sort_name = self.sort_mode.title()
 
         base = f"View: {view_name} | Sort: {sort_name} | Files: {files} | Dirs: {dirs} | [v] cycle"
+        if self.view_mode == "table":
+            files_label = "Files:on [f]" if self.show_files else "Files:off [f]"
+            dirs_label = "Dirs:on [d]" if self.show_dirs else "Dirs:off [d]"
+            base += f" | {files_label} | {dirs_label}"
         if self._selected_authors and self.view_mode in ("authors", "global_authors"):
             n = len(self._selected_authors)
             base += f" | [Tab] select  Selected: {n} — [Enter] merge, [Esc] cancel"
@@ -892,6 +897,19 @@ class GitActivityApp(App):
         """Toggle heatmap sub-mode (only active when in heatmap view)."""
         if self.view_mode == "heatmap":
             self.query_one("#heatmap-view", HeatmapWidget).toggle_mode()
+
+    def _toggle_filter(self, attr: str) -> None:
+        if self.view_mode != "table":
+            return
+        setattr(self, attr, not getattr(self, attr))
+        self._refresh_table_rows()
+        self._update_stats()
+
+    def action_toggle_files(self) -> None:
+        self._toggle_filter("show_files")
+
+    def action_toggle_dirs(self) -> None:
+        self._toggle_filter("show_dirs")
 
     def action_cycle_sort(self) -> None:
         """Cycle through sort modes (context-sensitive)."""
