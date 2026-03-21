@@ -881,8 +881,12 @@ class GitActivityApp(App):
         """Cycle through all view modes."""
         modes = ["tree", "table", "authors", "global_authors", "heatmap"]
         current_idx = modes.index(self.view_mode) if self.view_mode in modes else 0
-        self.view_mode = modes[(current_idx + 1) % len(modes)]
-        self._update_view()
+        next_mode = modes[(current_idx + 1) % len(modes)]
+        if next_mode == "authors":
+            self._enter_author_view()
+        else:
+            self.view_mode = next_mode
+            self._update_view()
 
     def action_view_1(self) -> None:
         self.view_mode = "tree"
@@ -893,10 +897,7 @@ class GitActivityApp(App):
         self._update_view()
 
     def action_view_3(self) -> None:
-        self._author_context_path = ""
-        self._populate_author_table("")
-        self.view_mode = "authors"
-        self._update_view()
+        self._enter_author_view()
 
     def action_view_4(self) -> None:
         self.view_mode = "global_authors"
@@ -906,24 +907,32 @@ class GitActivityApp(App):
         self.view_mode = "heatmap"
         self._update_view()
 
-    def action_author_view(self) -> None:
-        """Switch to author view for the currently selected file/directory."""
-        if self.loading:
-            return
-        path = ""
+    def _get_focused_path(self) -> str:
+        """Return the path of the currently focused file/dir, or '' for repo-wide."""
         if self.view_mode == "tree":
             tree = self.query_one("#file-tree", ActivityTree)
             if tree.cursor_node and tree.cursor_node.data:
-                path = tree.cursor_node.data.get("_path", "")
+                return tree.cursor_node.data.get("_path", "")
         elif self.view_mode == "table":
             table = self.query_one("#file-table", ActivityTable)
             row = table.cursor_row
             if 0 <= row < len(self.flat_data):
-                path = self.flat_data[row]["path"]
+                return self.flat_data[row]["path"]
+        return ""
+
+    def _enter_author_view(self) -> None:
+        """Switch to author view, scoping to the focused file/dir if in tree or table."""
+        if self.loading:
+            return
+        path = self._get_focused_path()
         self._author_context_path = path
         self._populate_author_table(path)
         self.view_mode = "authors"
         self._update_view()
+
+    def action_author_view(self) -> None:
+        """Switch to author view for the currently selected file/directory."""
+        self._enter_author_view()
 
     def action_toggle_heatmap_mode(self) -> None:
         """Toggle heatmap sub-mode (only active when in heatmap view)."""
